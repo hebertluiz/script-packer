@@ -28,10 +28,14 @@ levels[3]="TRACE"
 levels[4]="ERROR"
 
 
+VERBOSE=0
 function verbose () {
+    # $1 - level
+    # $2 - msg 
+    # $3 - error
     if [ "$1" -ge "1" ]
     then 
-        printf "%s -[%s] %s\n" "$(date +%D\ %T)" "${levels[$1]}" "$2" 1>&2
+        [ "$1" -le "$VERBOSE" ] && printf "%s -[%s] %s\n" "$(date +%D\ %T)" "${levels[$1]}" "$2" 1>&2
     else 
         printf "%s\n" "$2" 1>&2
     fi
