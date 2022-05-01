@@ -34,7 +34,7 @@ USAGE_MSG
 }
 
 #### Parsing OPTS
-while getopts "f:d:o:p:v:hD" opt; do
+while getopts ":f:d:o:p:v:hD" opt; do
     case ${opt} in 
         p) #opt packagename
             package_name="${OPTARG:-package}"
@@ -55,14 +55,11 @@ while getopts "f:d:o:p:v:hD" opt; do
             tar_to_pack="$OPTARG"
         ;;
         v) # set verbose output
-            if [ "$OPTARG" = ':' ];
-            then 
-                VERBOSE++ 
-            fi
+            VERBOSE="$OPTARG"
         ;;
         D) # set debug and verbose 
-            VERBOSE=true
-            set -vx
+            # VERBOSE=10
+            set -x
         ;;
         h) # show help and info
             echo "$BRIEF" 1>&2
@@ -71,7 +68,15 @@ while getopts "f:d:o:p:v:hD" opt; do
         ;;
         \?) # Generic case for invalid options 
             usage error 1>&2
-            error 3 "Invalid Option: -$OPTARG" 
+            error 3 "-$OPTARG is not a valid option: " 
+        ;;
+        :) # Case for empty values
+            if [ "$OPTARG" = 'v' ]
+            then
+                VERBOSE=1
+            else
+                error 4 "-$OPTARG requires an argument"
+            fi
         ;;
     esac
 done
@@ -93,19 +98,17 @@ then
 
 elif [ -s "$outfile_path/${outfile_name:-run.sh}" ]
 then 
-    # TODO Check if file exists to prevent overwrite.
     error 1 "File $outfile_name is not empty"
 
 fi
 
-outfile="$outfile_path/${outfile_name:-run.sh}"
 
 
 ## Check input files
 if [ -z "$tar_to_pack" ]; 
 then 
     PACK_DIR=true 
-    
+    verbose 1 "Selecting directory $dir_to_pack"
     if [ ! -d "$dir_to_pack" ];
     then 
         error 1 "Source dir does not exist"
@@ -118,12 +121,13 @@ then
 else
     
     PACK_DIR=false
+    verbose 1 "Selecting file $tar_to_pack"
     if [ ! -r "$tar_to_pack" ]
     then
         error 1 "Cant read $tar_to_pack"
     fi
 
-    if ! tar tf "$tar_to_pack" 
+    if ! tar tf "$tar_to_pack"  &>/dev/null 
     then
         error 1 "Invalid Tar File $tar_to_pack"
     fi 
@@ -131,27 +135,46 @@ else
 fi
 
 
-# TODO Generate Tar file from $dir_to_pack
-# TODO Covert Tarfile to base64 
-# TODO Pack the base64 inside the shellscript
-# TODO Generate a MD5 SUM of file to compare
+outfile="$outfile_path/${outfile_name:-run.sh}"
+[ -z "$package_name" ] && package_name="packaged-run.sh"
+
+verbose 1 "Setting output to $outfile"
+verbose 1 "Package Name: $package_name"
 
 # shellcheck disable=SC2034  # Unused variables left temporarily
-template_bootstrap_script="template-run.sh"; 
+template_bootstrap_script="template-run.sh" 
 # shellcheck disable=SC2034
 packed_file=package.tar.gz
 
-echo "Outfile: $outfile"
-echo "Package Name: $package_name"
 
+WORKDIR=$(mktemp -d)
+cd "$WORKDIR" || error 1 "Cant create $WORKDIR" 
+verbose 1 "Working on directory $WORKDIR"
+
+## Packing files if needed 
 if $PACK_DIR 
 then 
-    echo "Dir To Pack: $dir_to_pack"
+    # TODO Generate Tar file from $dir_to_pack 
+    verbose 2 "Creating file $packed_file"
+    verbose 0 "Compressing files..."
+    tar cf "$packed_file" "$dir_to_pack"
 else
-    echo "Tar To Pack: $tar_to_pack"
+    verbose 1 "Coping $tar_to_pack to temporary directory"
+    verbose 0 "Coping file..."
+    \cp -a "$tar_to_pack" "$packed_file"
 fi
 
+verbose 1 "Creating MDSUM of $packed_file"
+MDSUM=$(md5sum $packed_file | cut -d ' ' -f 1)
+verbose 2 "File $packed_file MDSUM=$MDSUM"
+
+# TODO Embed the file after the script in run.sh
+# TODO Replace RUN_SCRIPT
+# TODO Replace OUTFILE_NAME
+# TODO Compress the outfile if needed 
 
 
+rm -rf "$WORKDIR"
+verbose 1 "Removed $WORKDIR"
 exit 0
 
