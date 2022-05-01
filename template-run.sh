@@ -17,12 +17,21 @@ then
    exit 1
 fi
 # Extract file
-tail -n +"$SCRIPT_END" "$0" >"$WORKDIR/OUTFILE_NAME"
- 
+tail -n +"$SCRIPT_END" "$0" | base64 -d - >> "$WORKDIR/OUTFILE_NAME"
+
+mdsum="$(grep MD5SUM- "$0" | cut -d \- -f 2)"
+if [ ! "$mdsum" = "$(md5sum $WORKDIR/OUTFILE_NAME | cut -d ' ' -f 1)" ]
+then
+  echo "File currupted"
+  exit 2
+fi
+
 # Do something with the file
 echo Here\'s your file:
-tar zxf OUTFILE_NAME
+
+tar xf "$WORKDIR/OUTFILE_NAME"
 "$WORKDIR/RUN_SCRIPT"
+
 echo Deleting...
 rm -r "$WORKDIR"
 exit 0

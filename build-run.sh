@@ -9,6 +9,8 @@ BRIEF='Script Packer:
 '
 ## Global variables
 programname=$0
+BASEPATH=$PWD
+COMPRESS=false
 
 source ./functions/log_console.sh
 
@@ -34,7 +36,7 @@ USAGE_MSG
 }
 
 #### Parsing OPTS
-while getopts ":f:d:o:p:v:hD" opt; do
+while getopts ":f:d:o:p:v:hDc" opt; do
     case ${opt} in 
         p) #opt packagename
             package_name="${OPTARG:-package}"
@@ -47,6 +49,9 @@ while getopts ":f:d:o:p:v:hD" opt; do
             outfile_path="${unsafe_path:-.}"
             unset unsafe_path
 
+        ;;
+        c) # Compress outfile
+            COMPRESS=true
         ;;
         d) # dir to pack
             dir_to_pack="$OPTARG"
@@ -144,35 +149,45 @@ verbose 1 "Package Name: $package_name"
 # shellcheck disable=SC2034  # Unused variables left temporarily
 template_bootstrap_script="template-run.sh" 
 # shellcheck disable=SC2034
-packed_file=package.tar.gz
-
+packed_file=package.tar
 
 WORKDIR=$(mktemp -d)
-cd "$WORKDIR" || error 1 "Cant create $WORKDIR" 
 verbose 1 "Working on directory $WORKDIR"
 
 ## Packing files if needed 
 if $PACK_DIR 
-then 
-    # TODO Generate Tar file from $dir_to_pack 
+then  
     verbose 2 "Creating file $packed_file"
     verbose 0 "Compressing files..."
-    tar cf "$packed_file" "$dir_to_pack"
+    tar cf "$WORKDIR/$packed_file" "$dir_to_pack"
 else
     verbose 1 "Coping $tar_to_pack to temporary directory"
     verbose 0 "Coping file..."
-    \cp -a "$tar_to_pack" "$packed_file"
+    \cp -a "$tar_to_pack" "$WORKDIR/$packed_file"
 fi
 
 verbose 1 "Creating MDSUM of $packed_file"
-MDSUM=$(md5sum $packed_file | cut -d ' ' -f 1)
+MDSUM=$(md5sum "$WORKDIR/$packed_file" | cut -d ' ' -f 1)
 verbose 2 "File $packed_file MDSUM=$MDSUM"
 
-# TODO Embed the file after the script in run.sh
-# TODO Replace RUN_SCRIPT
-# TODO Replace OUTFILE_NAME
-# TODO Compress the outfile if needed 
+verbose 0 "Creating $package_name..."
+cp "$BASEPATH/$template_bootstrap_script" "$WORKDIR"/run.sh
 
+sed -e 's/OUTFILE_NAME/'$packed_file'/g'\
+    -e 's/RUN_SCRIPT/run.sh/g' \
+    -e 's/MD5SUM-FILE/MD5SUM-'"$MDSUM"'/g' -i "$WORKDIR"/run.sh
+
+base64 "$WORKDIR/$packed_file" >> "$WORKDIR"/run.sh
+
+if $COMPRESS
+then
+    verbose 0 "Compressing file..."
+    gzip -q "$WORKDIR"/run.sh
+    mv "$WORKDIR"/run.sh.gz "$outfile.gz"
+    verbose 4 "$(gzip -l "$outfile".gz)"
+else
+    mv "$WORKDIR"/run.sh "$outfile"
+fi 
 
 rm -rf "$WORKDIR"
 verbose 1 "Removed $WORKDIR"
